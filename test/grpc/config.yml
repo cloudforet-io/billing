@@ -1,0 +1,16 @@
+---
+GLOBAL:
+  SERVICE: tester
+  LOG:
+    level: DEBUG
+  ENDPOINTS:
+    identity:
+      v1: identity:50051
+    repository:
+      v1: repository:50051
+    plugin:
+      v1: plugin:50051    
+    secret:
+      v1: secret:50051
+    billing:
+      v1: billing:50051

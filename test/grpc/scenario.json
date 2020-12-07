@@ -1,0 +1,13 @@
+{
+    "options": {
+        "update_mode": false,
+        "terminate": true,
+        "update_supervisor_token": false
+    },
+    "consul": {
+    },
+    "domain": {
+        "domain": {},
+        "domainOwner": {"owner_id": "admin", "password": "admin"}
+    }
+}
