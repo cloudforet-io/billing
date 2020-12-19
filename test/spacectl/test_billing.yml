@@ -1,0 +1,9 @@
+import:
+  - service_account.yml
+var:
+  project_id: project-id-for-test
+  email: email_from_hyperbilling
+  key: key_from_hyperbilling
+  account: account_from_hyperbilling
+
+tasks: []

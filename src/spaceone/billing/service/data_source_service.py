@@ -241,9 +241,6 @@ class DataSourceService(BaseService):
         if 'version' not in plugin_info_params:
             raise ERROR_REQUIRED_PARAMETER(key='plugin_info.version')
 
-        if 'options' not in plugin_info_params:
-            raise ERROR_REQUIRED_PARAMETER(key='plugin_info.options')
-
         secret_id = plugin_info_params.get('secret_id')
         provider = plugin_info_params.get('provider')
 
@@ -263,7 +260,7 @@ class DataSourceService(BaseService):
     def _init_plugin(self, plugin_info, domain_id):
         plugin_id = plugin_info['plugin_id']
         version = plugin_info['version']
-        options = plugin_info['options']
+        options = plugin_info.get('options', {})
 
         plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
         plugin_mgr.init_plugin(plugin_id, version, domain_id)

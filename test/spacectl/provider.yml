@@ -1,0 +1,33 @@
+tasks:
+  - name: Create Hyperbilling Provider
+    id: hyperbilling_provider
+    uses: "@modules/resource"
+    spec:
+      resource_type: identity.Provider
+      data:
+        provider: hyperbilling
+        name: Hyper Billing
+        capability:
+          supported_schema:
+          - aws_hyperbilling
+          - gcp_hyperbilling
+          - azure_hyperbilling
+        template:
+          service_account:
+            schema:
+              properties:
+                project_id:
+                  title: Project ID
+                  type: string
+                  minLength: 4
+              type: object
+              required:
+              - project_id
+        tags:
+        - key: color
+          value: "#004F99"
+        - key: icon
+          value: https://assets-console-spaceone-stg.s3.ap-northeast-2.amazonaws.com/console-assets/icons/megazone.svg
+      mode: EXEC
+      verb:
+        exec: create

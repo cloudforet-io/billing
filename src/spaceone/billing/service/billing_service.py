@@ -13,10 +13,16 @@ from spaceone.billing.manager.plugin_manager import PluginManager
 
 _LOGGER = logging.getLogger(__name__)
 
+# MultiIndex of pandas
 AGGR_MAP = {
-    'REGION': 'region_code',
+    'PROVIDER': 'provider',
+    'PROJECT': 'project_id',
+    'SERVICE_ACCOUNT': 'service_account_id',
+    'REGION_CODE': 'region_code',
     'RESOURCE_TYPE': 'service_code'
 }
+
+DEFAULT_CURRENCY = 'USD'
 
 @authentication_handler
 @authorization_handler
@@ -32,7 +38,6 @@ class BillingService(BaseService):
 
     @transaction
     @check_required(['start', 'end', 'granularity', 'domain_id'])
-    @change_timestamp_value(['start', 'end'], timestamp_format='iso8601')
     def get_data(self, params):
         """ Get billing data
 
@@ -46,9 +51,13 @@ class BillingService(BaseService):
                 'start': 'timestamp',
                 'end': 'timestamp',
                 'granularity': 'str',
-                'domain_id': 'str'
+                'domain_id': 'str',
+                'sort': 'dict',
+                'limit': 'int'
             }
 
+        Examples:
+            sort = {'date': '2020-12', 'desc': True}
         Returns:
             billing_data_info (list)
         """
@@ -58,6 +67,9 @@ class BillingService(BaseService):
         project_group_id = params.get('project_group_id', None)
         service_accounts = params.get('service_accounts', [])
         aggregation = params.get('aggregation', [])
+        sort = params.get('sort', None)
+        limit = params.get('limit', None)
+        self.currency = params.get('currency', DEFAULT_CURRENCY)
 
         # Initialize plugin_mgr
         # caching endpoints
@@ -66,130 +78,144 @@ class BillingService(BaseService):
         endpoint_dic = {}
         possible_service_accounts = self._get_possible_service_accounts(domain_id, project_id, project_group_id, service_accounts)
         _LOGGER.debug(f'[get_data] {possible_service_accounts}')
-        dataframe_list = []
+        data_arrays_list = []
         for (service_account_id, plugin_info) in possible_service_accounts.items():
             # get secret from service accunt
             secrets_info = self.secret_mgr.list_secrets_by_service_account_id(service_account_id, domain_id)
             for secret in secrets_info['results']:
-                secret_id = secret['secret_id']
-                secret_data = self.secret_mgr.get_secret_data(secret_id, domain_id)
-                # call plugin_manager for get data
-                # get data
-                param_for_plugin = {
-                    'schema': 'aws_hyperbilling',
-                    'options': {},
-                    'secret_data': secret_data,
-                    'filter': {},
-                    'aggregation': aggregation,
-                    'start': params['start'],
-                    'end': params['end'],
-                    'granularity': params['granularity']
-                }
-                self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
-                response = self.plugin_mgr.get_data(**param_for_plugin)
-                print(response)
-                df = self._make_dataframe(response)
-                print(df)
-                dataframe_list.append(df)
+                try:
+                    secret_id = secret['secret_id']
+                    secret_data = self.secret_mgr.get_secret_data(secret_id, domain_id)
+                    # call plugin_manager for get data
+                    # get data
+                    param_for_plugin = {
+                        'schema': secret['schema'],
+                        'options': {},
+                        'secret_data': secret_data,
+                        'filter': {},
+                        'aggregation': self._get_plugin_aggregation(aggregation),
+                        'start': params['start'],
+                        'end': params['end'],
+                        'granularity': params['granularity']
+                    }
+                    self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
+                    response = self.plugin_mgr.get_data(**param_for_plugin)
+                    data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
+                    data_arrays_list.extend(data_arrays)
+                except Exception as e:
+                    _LOGGER.error(f'[get_data] fail to get_data by {secret_id}, skip.....')
 
-        _LOGGER.debug(f'[get_data] {dataframe_list}')
-        # Merge All data
-        merged_data = pd.concat(dataframe_list)
+        _LOGGER.debug(f'[get_data] {data_arrays_list}')
+        # Make DataFrame from data_arrays_list
+        data_frames = pd.DataFrame(data_arrays_list)
+        data_frames.fillna(0, inplace=True)
 
-        result = self._get_aggregated_data(merged_data, aggregation)
+        result = self._get_aggregated_data(data_frames, aggregation, sort, limit)
 
         # make to output format
         return self._create_result(result, domain_id)
 
 
-    def _make_dataframe(self, result):
+    def _make_data_arrays(self, result, service_account_id, project_id):
         results = result.get('results', [])
-        multi_index = []
-        cost_list = []
+        data_arrays = []
         for result in results:
-            #resource_type = result['resource_type']
-            (multiple_index, columns) = self._parse_resource_type(result['resource_type'])
-            columns.append('date')
+            resource_type = result['resource_type'] + f'&project_id={project_id}&service_account_id={service_account_id}'
+            fields = self._parse_resource_type(resource_type)
             billing_data = result['billing_data']
+            single_data = fields.copy()
             for billing_info in billing_data:
                 date = billing_info['date']
                 cost = billing_info.get('cost', 0)
                 currency = billing_info.get('currency', 'USD')
-                index = multiple_index.copy()
-                index.append(date)
-                multi_index.append(index)
-                cost_list.append(cost)
-
-        # crete DataFrame
-
-        df = pd.DataFrame(multi_index, columns=columns)
-        idx = pd.MultiIndex.from_frame(df)
-        s1 = pd.Series(cost_list, index=idx)
-        return s1
+                single_data[date] = cost
+            data_arrays.append(single_data)
+        return data_arrays
 
     @staticmethod
     def _parse_resource_type(res_type):
-        """ Return
-        (multiple_index, columns)
+        """ Return dict
+        example
+        {
+            'resource_type': 'inventory.CloudService',
+            'provider': 'aws',
+            'region_code': 'ap-northeast-2'
+            ...
+        }
         """
         item = res_type.split('?')
-        multiple_index = [item[0]]
-        columns = ['resource_type']
+        result = {'resource_type': item[0]}
         if len(item) > 1:
             query = item[1].split('&')
         else:
             query = []
         for q_item in query:
             (a,b) = q_item.split('=')
-            multiple_index.append(b)
-            columns.append(a)
-
-        return (multiple_index, columns)
+            result[a] = b
+        return result
 
     def _create_result(self, df, domain_id):
-        """ From df, create result
+        """ From DataFrame, create sult
         """
         index = df.index.names
-        dict_vaule = df.to_dict()
-        result = {}
-        for k,v in dict_vaule.items():
-            # k (res_type, ..., date): cost
-            resource_type = k[0] + "?"
-            id = 0
-            for id in range(len(k)-2):
-                resource_type = f'{resource_type}{index[id+1]}={k[id+1]}&'
-            date = k[-1]
-            cost = v
-            value = result.get(resource_type[:-1], [])
-            value.append({'date': date, 'cost': cost, 'currency': 'USD'})
-            result[resource_type[:-1]] = value
-        _LOGGER.debug(f'[_create_result] {result}')
-        output = []
-        total_count = 0
-        for k,v in result.items():
-            total_count += 1
-            output.append({'resource_type': k, 'billing_data': v, 'domain_id': domain_id})
-        return output
+        result = []
+        count = 0
+        for column_name, item in df.iterrows():
+            res_info = self._create_resource_info(index, column_name)
+            data = res_info.copy()
+            sorted_cost = self._create_cost_data(item)
+            data['billing_data'] = sorted_cost
+            result.append(data)
+            count += 1
+        return {'result': result, 'total_count': count}
 
-    def _get_aggregated_data(self, data, aggregation):
-        """ processing self.merged_data based on aggregation
+    @staticmethod
+    def _create_resource_info(index, value):
+        """
+        return:
+        {
+            'resource_type': 'inventory.CloudService?provider=aws&....',
+            'project_id': 'project-1234',
+            'service_account_id': 'sa-1234',
+            ...
+        }
+        """
+        res_type = value[0] + "?"
+        result = {}
+        for idx in range(len(index) - 1):
+            key = index[idx+1]
+            val = value[idx+1]
+            res_type = f"{res_type}{key}={val}&"
+            result[key] = val
+        result['resource_type'] = res_type[:-1]
+        return result
+
+    def _create_cost_data(self, cost):
+        cost_dict = cost.to_dict()
+        sorted_cost = sorted(cost_dict.items())
+        result = []
+        for item in sorted_cost:
+            value = {'date': item[0], 'cost': item[1], 'currency': self.currency }
+            result.append(value)
+        return result
+
+    def _get_aggregated_data(self, dataframe, aggregation, sort=None, limit=None):
+        """ processing DataFrame
+            1) aggregation
+            2) sort
+            3) limit
 
         Args:
-            aggregation: list, ['REGION', 'RESOURCE_TYPE', None]
+            aggregation: list, ['PROJECT', 'SERVICE_ACCOUNT', 'REGION_CODE', 'RESOURCE_TYPE', None]
 
         aggregation is based on resource_type
 
         self.merged_data(DataFrame) :
-            resource_type       provider     region_code                 date          cost
-            ---------------------------------------------------------------------------------
-            inventory.CloudService   aws     ap-northeast-2             2020-10         12
-                                                                        2020-11         13
-                                                                        2020-12         16
-
-
-            inventory.CloudService   gcp     us-east-2                  2020-10         12
-                                                                        2020-11         13
-                                                                        2020-12         16
+            resource_type       provider     region_code      project_id   service_account_id   2020-10  2020-11  2020-12
+            ----------------------------------------------------------------------------------+---------------------------
+            inventory.CloudService   aws     ap-northeast-2  project-1111  sa-1111              10        12       30
+            inventory.CloudService   aws     ap-northeast-2  project-1111  sa-2222              20        22       40
+            inventory.CloudService   gcp     us-east-2       project-3333  sa-3333              2         50       100
 
 
         """
@@ -198,12 +224,40 @@ class BillingService(BaseService):
         group_by = ['resource_type']
         for aggr in aggregation:
             group_by.append(AGGR_MAP[aggr])
-        # Last add date by
-        group_by.append('date')
 
-       # processing
-        processed_data = data.groupby(level=group_by).sum()
-        return processed_data
+       # 1. aggregation
+        grouped_data = dataframe.groupby(group_by).sum()
+        _LOGGER.debug(f'\n\n[1. Aggregation]{group_by}\n {grouped_data}')
+        """
+        ##################################################
+        resource_type           project_id            2020-10    2020-11    2020-12
+        inventory.CloudService  project-1111          30         34         70
+        inventory.CloudService  project-3333          2          50         100
+        """
+
+        # 2. Sort
+        if sort:
+            print(f"#### Get values by sort request: {sort} ###")
+            """
+            resource_type           project_id
+            inventory.CloudService  project-3e8c54e8c59a   -36463.706052
+                                    project-8b31217811f1   -72927.412105
+                                    project-f182e4c8ff5d   -36463.706052
+            """
+            desc = sort.get('desc', True)
+            if desc:
+                ascending = False
+            else:
+                ascending = True
+            grouped_data = grouped_data.sort_values(by=[sort['date']], ascending=ascending)
+            _LOGGER.debug(f'\n\n[2. Sort]{sort}\n {grouped_data}')
+
+        # 3. Limit
+        if limit:
+            grouped_data = grouped_data.iloc[:limit]
+            _LOGGER.debug(f'\n\n[3. Limit]{limit}\n {grouped_data}')
+
+        return grouped_data
 
     def _get_possible_service_accounts(self, domain_id, project_id=None, project_group_id=None, service_accounts=[]):
         """ Find possible service account list
@@ -243,6 +297,13 @@ class BillingService(BaseService):
                     data_source_dict = data_source_vo.to_dict()
                     results[service_account['service_account_id']] = data_source_dict['plugin_info']
         return results
+
+    def _get_plugin_aggregation(self, aggregation):
+        """ Return for aggregation list for plugin
+        plugin only support, REGION_CODE, RESOURCE_TYPE
+        """
+        supported = ['REGION_CODE', 'RESOURCE_TYPE']
+        return list(set(supported) & set(aggregation))
 
     @staticmethod
     def _check_data_source_state(data_source_vo):

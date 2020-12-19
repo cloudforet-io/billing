@@ -1,0 +1,15 @@
+tasks:
+  - name: Add Hyperbilling DataSource
+    id: aws_hyperbilling_datasource
+    uses: "@modules/resource"
+    spec:
+      resource_type: billing.DataSource
+      data:
+        name: AWS HyperBilling
+        plugin_info:
+          plugin_id: ${{ tasks.aws_hyperbilling_plugin.output.plugin_id }}
+          version: "0.4.1"
+          provider: megazone
+      mode: EXEC
+      verb:
+        exec: register

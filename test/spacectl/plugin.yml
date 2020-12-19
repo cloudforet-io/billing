@@ -1,0 +1,41 @@
+tasks:
+  - name: Create AWS Hyperbiling Plugin
+    id: aws_hyperbilling_plugin
+    uses: "@modules/resource"
+    spec:
+      resource_type: repository.Plugin
+      data:
+        name: aws-hyperbilling
+        service_type: billing.DataSource
+        image: pyengine/aws-hyperbilling
+        labels:
+        - billing
+        - hyperbilling
+        provider: hyperbilling
+        capability:
+          supported_schema:
+          - aws_hyperbilling
+        template:
+          options:
+            schema:
+              properties:
+                sa_name:
+                  minLength: 4
+                  type: string
+                  title: Service Account
+                project_id:
+                  minLength: 4
+                  type: string
+                  title: Project ID
+              type: object
+              required: []
+        tags:
+        - key: icon
+          value: https://assets-console-spaceone-stg.s3.ap-northeast-2.amazonaws.com/console-assets/icons/megazone.svg
+        - key: description
+          value: Hyperbilling for AWS
+        - key: spaceone:plugin_name
+          value: aws-hyperbilling
+      mode: EXEC
+      verb:
+        exec: register
