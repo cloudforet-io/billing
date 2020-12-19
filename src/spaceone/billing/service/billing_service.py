@@ -180,7 +180,11 @@ class BillingService(BaseService):
             ...
         }
         """
-        res_type = value[0] + "?"
+        if isinstance(value,str):
+            res_type = value + "?"
+        else:
+            # else tuple
+            res_type = value[0] + "?"
         result = {}
         for idx in range(len(index) - 1):
             key = index[idx+1]
@@ -188,6 +192,7 @@ class BillingService(BaseService):
             res_type = f"{res_type}{key}={val}&"
             result[key] = val
         result['resource_type'] = res_type[:-1]
+
         return result
 
     def _create_cost_data(self, cost):
