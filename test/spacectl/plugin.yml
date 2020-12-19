@@ -7,7 +7,7 @@ tasks:
       data:
         name: aws-hyperbilling
         service_type: billing.DataSource
-        image: pyengine/aws-hyperbilling
+        image: megazone/aws-hyperbilling
         labels:
         - billing
         - hyperbilling
