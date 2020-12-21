@@ -15,11 +15,11 @@ _LOGGER = logging.getLogger(__name__)
 
 # MultiIndex of pandas
 AGGR_MAP = {
-    'PROVIDER': 'provider',
-    'PROJECT': 'project_id',
-    'SERVICE_ACCOUNT': 'service_account_id',
-    'REGION_CODE': 'region_code',
-    'RESOURCE_TYPE': 'service_code'
+    'identity.Provider': 'provider',
+    'identity.Project': 'project_id',
+    'identity.ServiceAccount': 'service_account_id',
+    'inventory.Region': 'region_code',
+    'inventory.CloudServiceType': 'service_code'
 }
 
 DEFAULT_CURRENCY = 'USD'
@@ -110,17 +110,23 @@ class BillingService(BaseService):
         data_frames = pd.DataFrame(data_arrays_list)
         data_frames.fillna(0, inplace=True)
 
-        result = self._get_aggregated_data(data_frames, aggregation, sort, limit)
-
+        try:
+            result = self._get_aggregated_data(data_frames, aggregation, sort, limit)
+        except Exception as e:
+            raise ERROR_BILLING_AGGREGATION(params=params)
         # make to output format
-        return self._create_result(result, domain_id)
-
+        try:
+            result = self._create_result(result, domain_id)
+            return result
+        except Exception as e:
+            raise ERROR_BILLING_CREATE_RESULT(params=params)
 
     def _make_data_arrays(self, result, service_account_id, project_id):
         results = result.get('results', [])
         data_arrays = []
         for result in results:
-            resource_type = result['resource_type'] + f'&project_id={project_id}&service_account_id={service_account_id}'
+            resource_type = result['resource_type'] + \
+                f'&identity.Project={project_id}&identity.ServiceAccount={service_account_id}'
             fields = self._parse_resource_type(resource_type)
             billing_data = result['billing_data']
             single_data = fields.copy()
@@ -169,14 +175,25 @@ class BillingService(BaseService):
             count += 1
         return {'results': result, 'total_count': count}
 
+    def _get_last_date(self, df):
+        """ Find last date for automatic sorting
+
+        ex. provider    2020-10   2020-11   2020-12
+            aws         10        20        30
+
+        return 2020-12
+        """
+        date_columns = sorted(df.columns)
+        return date_columns[-1]
+
     @staticmethod
     def _create_resource_info(index, value):
         """
         return:
         {
             'resource_type': 'inventory.CloudService?provider=aws&....',
-            'project_id': 'project-1234',
-            'service_account_id': 'sa-1234',
+            'identity.Project': {'project_id': 'project-1234'},
+            'identity.ServiceAccount': {'service_account_id': 'sa-1234'},
             ...
         }
         """
@@ -190,7 +207,7 @@ class BillingService(BaseService):
             key = index[idx+1]
             val = value[idx+1]
             res_type = f"{res_type}{key}={val}&"
-            result[key] = val
+            result[key] = {AGGR_MAP[key]: val}
         result['resource_type'] = res_type[:-1]
 
         return result
@@ -226,36 +243,35 @@ class BillingService(BaseService):
         """
         # Based on aggregation
         # append group_by filter
-        group_by = ['resource_type']
-        for aggr in aggregation:
-            group_by.append(AGGR_MAP[aggr])
+        group_by = ['resource_type'] + aggregation
 
        # 1. aggregation
         grouped_data = dataframe.groupby(group_by).sum()
         _LOGGER.debug(f'\n\n[1. Aggregation]{group_by}\n {grouped_data}')
         """
         ##################################################
-        resource_type           project_id            2020-10    2020-11    2020-12
+        resource_type           identity.Project      2020-10    2020-11    2020-12
         inventory.CloudService  project-1111          30         34         70
         inventory.CloudService  project-3333          2          50         100
         """
 
-        # 2. Sort
-        if sort:
-            print(f"#### Get values by sort request: {sort} ###")
-            """
-            resource_type           project_id
-            inventory.CloudService  project-3e8c54e8c59a   -36463.706052
-                                    project-8b31217811f1   -72927.412105
-                                    project-f182e4c8ff5d   -36463.706052
-            """
-            desc = sort.get('desc', True)
-            if desc:
-                ascending = False
-            else:
-                ascending = True
-            grouped_data = grouped_data.sort_values(by=[sort['date']], ascending=ascending)
-            _LOGGER.debug(f'\n\n[2. Sort]{sort}\n {grouped_data}')
+        # 2. Sort (default sort: desc=true, date={last date})
+        print(f"#### Get values by sort request: {sort} ###")
+        """
+        resource_type           identity.Project
+        inventory.CloudService  project-3e8c54e8c59a   -36463.706052
+                                project-8b31217811f1   -72927.412105
+                                project-f182e4c8ff5d   -36463.706052
+        """
+        desc = sort.get('desc', True)
+        date = sort.get('date', self._get_last_date(grouped_data))
+
+        if desc:
+            ascending = False
+        else:
+            ascending = True
+        grouped_data = grouped_data.sort_values(by=[date], ascending=ascending)
+        _LOGGER.debug(f'\n\n[2. Sort]{sort}\n {grouped_data}')
 
         # 3. Limit
         if limit:
@@ -279,7 +295,7 @@ class BillingService(BaseService):
 
         # get project_list
         project_list = []
-        if project_id:
+        if self.identity_mgr.check_project(project_id, domain_id):
             project_list = [project_id]
         elif project_group_id:
             project_list = self.identity_mgr.list_projects_by_project_group_id(project_group_id, domain_id)
@@ -305,9 +321,9 @@ class BillingService(BaseService):
 
     def _get_plugin_aggregation(self, aggregation):
         """ Return for aggregation list for plugin
-        plugin only support, REGION_CODE, RESOURCE_TYPE
+        plugin only support, inventory.Region, inventory.CloudServiceType
         """
-        supported = ['REGION_CODE', 'RESOURCE_TYPE']
+        supported = ['inventory.Region', 'inventory.CloudServiceType']
         return list(set(supported) & set(aggregation))
 
     @staticmethod

@@ -26,6 +26,10 @@ class IdentityManager(BaseManager):
     def get_resource_key(self, resource_type, resource_info, reference_keys):
         return None
 
+    def check_project(self, project_id, domain_id):
+        response = self.identity_connector.get_project(project_id, domain_id)
+        return response
+
     def list_projects_by_project_group_id(self, project_group_id, domain_id):
         response = self.identity_connector.list_projects_by_project_group_id(project_gorup_id, domain_id)
         project_list = []
