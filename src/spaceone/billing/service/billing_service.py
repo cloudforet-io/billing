@@ -295,7 +295,7 @@ class BillingService(BaseService):
 
         # get project_list
         project_list = []
-        if self.identity_mgr.check_project(project_id, domain_id):
+        if project_id and self.identity_mgr.check_project(project_id, domain_id):
             project_list = [project_id]
         elif project_group_id:
             project_list = self.identity_mgr.list_projects_by_project_group_id(project_group_id, domain_id)
