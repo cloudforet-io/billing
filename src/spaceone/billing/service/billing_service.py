@@ -167,7 +167,7 @@ class BillingService(BaseService):
             data['billing_data'] = sorted_cost
             result.append(data)
             count += 1
-        return {'result': result, 'total_count': count}
+        return {'results': result, 'total_count': count}
 
     @staticmethod
     def _create_resource_info(index, value):
