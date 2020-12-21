@@ -67,7 +67,7 @@ class BillingService(BaseService):
         project_group_id = params.get('project_group_id', None)
         service_accounts = params.get('service_accounts', [])
         aggregation = params.get('aggregation', [])
-        sort = params.get('sort', None)
+        sort = params.get('sort', {'desc':True})
         limit = params.get('limit', None)
         self.currency = params.get('currency', DEFAULT_CURRENCY)
 
