@@ -77,6 +77,11 @@ class BillingService(BaseService):
         self.merged_data = None
         endpoint_dic = {}
         possible_service_accounts = self._get_possible_service_accounts(domain_id, project_id, project_group_id, service_accounts)
+
+        if possible_service_accounts == {}:
+            # nothing to do
+            return {'results': [], 'total_count': 0}
+
         _LOGGER.debug(f'[get_data] {possible_service_accounts}')
         data_arrays_list = []
         for (service_account_id, plugin_info) in possible_service_accounts.items():
