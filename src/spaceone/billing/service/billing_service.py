@@ -1,5 +1,7 @@
 import logging
-import traceback
+import hashlib
+import json
+
 
 import pandas as pd
 
@@ -23,6 +25,15 @@ AGGR_MAP = {
 }
 
 DEFAULT_CURRENCY = 'USD'
+
+def _dict_hash(dict):
+    """ hash dictionary
+    return hex digest
+    """
+    dhash = hashlib.md5()
+    encoded = json.dumps(dict, sort_keys=True).encode()
+    dhash.update(encoded)
+    return dhash.hexdigest()
 
 @authentication_handler
 @authorization_handler
@@ -101,8 +112,9 @@ class BillingService(BaseService):
                         'aggregation': self._get_plugin_aggregation(aggregation),
                         'start': params['start'],
                         'end': params['end'],
-                        'granularity': params['granularity']
+                        'granularity': params['granularity'],
                     }
+                    param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
                     self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
                     response = self.plugin_mgr.get_data(**param_for_plugin)
                     data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
@@ -336,4 +348,20 @@ class BillingService(BaseService):
         if data_source_vo.state == 'DISABLED':
             return False
         return True
+
+    @staticmethod
+    def _make_cache_key(params, domain_id):
+        """ from params, create cache key
+            schema: str
+            options: dict
+            secret_data: dict
+            filter: dict
+            aggregation: list
+            start: str
+            end: str
+            granularity: str
+            cache_key: str for data caching
+        """
+        cache_key = f'billing:{domain_id}:{_dict_hash(params)}'
+        return cache_key
 

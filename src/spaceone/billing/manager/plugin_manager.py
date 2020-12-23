@@ -1,5 +1,6 @@
 import logging
 
+from spaceone.core.cache import cacheable
 from spaceone.core.manager import BaseManager
 from spaceone.billing.error import *
 from spaceone.billing.connector.plugin_connector import PluginConnector
@@ -34,7 +35,20 @@ class PluginManager(BaseManager):
         self._validate_plugin_option(plugin_options, billing_type)
         return plugin_options
 
-    def get_data(self, schema, options, secret_data, filter, aggregation, start, end, granularity):
+    @cacheable(key='billing:{cache_key}', expire=3600)
+    def get_data(self, schema, options, secret_data, filter, aggregation, start, end, granularity, cache_key):
+        """
+        Args:
+            schema: str
+            options: dict
+            secret_data: dict
+            filter: dict
+            aggregation: list
+            start: str
+            end: str
+            granularity: str
+            cache_key: str for data caching
+        """
         billing_data_info = self.mp_connector.get_data(schema, options, secret_data, filter, aggregation, start, end, granularity)
 
         return billing_data_info
