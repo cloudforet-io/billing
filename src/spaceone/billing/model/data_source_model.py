@@ -2,9 +2,11 @@ from mongoengine import *
 
 from spaceone.core.model.mongo_model import MongoModel
 
+
 class DataSourceTag(EmbeddedDocument):
     key = StringField(max_length=255)
     value = StringField(max_length=255)
+
 
 class PluginInfo(EmbeddedDocument):
     plugin_id = StringField(max_length=40)
@@ -36,22 +38,11 @@ class DataSource(MongoModel):
             'state',
             'tags'
         ],
-        'exact_fields': [
-            'data_source_id',
-            'state',
-            'provider',
-            'plugin_info.plugin_id',
-            'plugin_info.version',
-            'plugin_info.secret_id',
-            'plugin_info.provider',
-            'domain_id',
-        ],
         'minimal_fields': [
             'data_source_id',
             'name',
             'state',
             'provider'
-
         ],
         'ordering': [
             'name'
@@ -62,5 +53,6 @@ class DataSource(MongoModel):
             'provider',
             'domain_id',
             ('tags.key', 'tags.value')
-        ]
+        ],
+        'auto_create_index': False
     }
