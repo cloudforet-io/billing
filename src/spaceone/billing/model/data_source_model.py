@@ -53,6 +53,5 @@ class DataSource(MongoModel):
             'provider',
             'domain_id',
             ('tags.key', 'tags.value')
-        ],
-        'auto_create_index': False
+        ]
     }
