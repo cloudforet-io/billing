@@ -1,9 +1,12 @@
 import logging
 import hashlib
 import json
-
+import re
 
 import pandas as pd
+
+from dateutil.parser import parse
+from dateutil.relativedelta import relativedelta
 
 from spaceone.core.service import *
 
@@ -72,6 +75,8 @@ class BillingService(BaseService):
         Returns:
             billing_data_info (list)
         """
+        params = self._check_params(params)
+
         domain_id = params['domain_id']
         # Get possible service_account list from DataSources
         project_id = params.get('project_id', None)
@@ -130,7 +135,8 @@ class BillingService(BaseService):
         try:
             result = self._get_aggregated_data(data_frames, aggregation, sort, limit)
         except Exception as e:
-            raise ERROR_BILLING_AGGREGATION(params=params)
+            # Nothing to aggregation
+            return {'results': [], 'total_count': 0}
         # make to output format
         try:
             result = self._create_result(result, domain_id)
@@ -365,3 +371,38 @@ class BillingService(BaseService):
         cache_key = f'billing:{domain_id}:{_dict_hash(params)}'
         return cache_key
 
+    @staticmethod
+    def _check_params(params):
+        """ check params
+
+        if
+        start=yyyy-mm --> yyyy-mm-01
+        end=yyyy-mm   --> yyyy-mm-dd (last day)
+        """
+        new_params = params.copy()
+        r1 = re.compile('^20\d\d-\d\d$')
+        r2 = re.compile('^20\d\d-\d\d-\d\d$')
+        start = params['start']
+        end = params['end']
+
+        # convert start
+        if r1.match(start):
+            start_date = parse(start+"-01")
+        elif r2.match(start):
+            start_date = parse(start)
+        else:
+            raise ERROR_BILLING_REQUEST_FORMAT(key='start', example='yyyy-mm | yyyy-mm-dd')
+
+        if r1.match(end):
+            end_date = parse(end) + relativedelta(day=31)
+        elif r2.match(end):
+            end_date = parse(end)
+        else:
+            raise ERROR_BILLING_REQUEST_FORMAT(key='start', example='yyyy-mm | yyyy-mm-dd')
+
+        new_params['start'] = start_date.strftime('%Y-%m-%d')
+        new_params['end'] = end_date.strftime('%Y-%m-%d')
+
+        _LOGGER.debug(f'[_check_params] check start, end : \n{params} \n {new_params}')
+
+        return new_params
