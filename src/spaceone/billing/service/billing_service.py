@@ -29,6 +29,7 @@ AGGR_MAP = {
 
 DEFAULT_CURRENCY = 'USD'
 
+
 def _dict_hash(dict):
     """ hash dictionary
     return hex digest
@@ -37,6 +38,7 @@ def _dict_hash(dict):
     encoded = json.dumps(dict, sort_keys=True).encode()
     dhash.update(encoded)
     return dhash.hexdigest()
+
 
 @authentication_handler
 @authorization_handler
@@ -50,7 +52,7 @@ class BillingService(BaseService):
         self.data_source_mgr: DataSourceManager = self.locator.get_manager('DataSourceManager')
         self.plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'PROJECT'})
     @check_required(['start', 'end', 'granularity', 'domain_id'])
     def get_data(self, params):
         """ Get billing data
