@@ -20,7 +20,7 @@ class DataSourceService(BaseService):
         super().__init__(*args, **kwargs)
         self.data_source_mgr: DataSourceManager = self.locator.get_manager('DataSourceManager')
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['name', 'plugin_info', 'domain_id'])
     def register(self, params):
         """Register data source
@@ -50,7 +50,7 @@ class DataSourceService(BaseService):
 
         return self.data_source_mgr.register_data_source(params)
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def update(self, params):
         """Update data source
@@ -85,7 +85,7 @@ class DataSourceService(BaseService):
 
         return self.data_source_mgr.update_data_source_by_vo(params, data_source_vo)
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def enable(self, params):
         """ Enable data source
@@ -107,7 +107,7 @@ class DataSourceService(BaseService):
         return self.data_source_mgr.update_data_source_by_vo({'state': 'ENABLED'},
                                                              data_source_vo)
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def disable(self, params):
         """ Disable data source
@@ -129,7 +129,7 @@ class DataSourceService(BaseService):
         return self.data_source_mgr.update_data_source_by_vo({'state': 'DISABLED'},
                                                              data_source_vo)
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def deregister(self, params):
         """Deregister data source
@@ -146,7 +146,7 @@ class DataSourceService(BaseService):
 
         self.data_source_mgr.deregister_data_source(params['data_source_id'], params['domain_id'])
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def verify_plugin(self, params):
         """ Verify data source plugin
@@ -169,7 +169,7 @@ class DataSourceService(BaseService):
 
         return {'status': True}
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['data_source_id', 'domain_id'])
     def get(self, params):
         """ Get data source
@@ -186,7 +186,7 @@ class DataSourceService(BaseService):
         """
         return self.data_source_mgr.get_data_source(params['data_source_id'], params['domain_id'], params.get('only'))
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['domain_id'])
     @append_query_filter(['data_source_id', 'name', 'state', 'provider', 'domain_id'])
     @change_tag_filter('tags')
@@ -212,7 +212,7 @@ class DataSourceService(BaseService):
         query = params.get('query', {})
         return self.data_source_mgr.list_data_sources(query)
 
-    @transaction
+    @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['query', 'domain_id'])
     @append_query_filter(['domain_id'])
     @change_tag_filter('tags')
