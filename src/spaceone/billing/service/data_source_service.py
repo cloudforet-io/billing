@@ -13,6 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @authentication_handler
 @authorization_handler
+@mutation_handler
 @event_handler
 class DataSourceService(BaseService):
 

@@ -30,18 +30,19 @@ AGGR_MAP = {
 DEFAULT_CURRENCY = 'USD'
 
 
-def _dict_hash(dict):
+def _dict_hash(data):
     """ hash dictionary
     return hex digest
     """
-    dhash = hashlib.md5()
-    encoded = json.dumps(dict, sort_keys=True).encode()
-    dhash.update(encoded)
-    return dhash.hexdigest()
+    data_hash = hashlib.md5()
+    encoded = json.dumps(data, sort_keys=True).encode()
+    data_hash.update(encoded)
+    return data_hash.hexdigest()
 
 
 @authentication_handler
 @authorization_handler
+@mutation_handler
 @event_handler
 class BillingService(BaseService):
 
@@ -52,7 +53,10 @@ class BillingService(BaseService):
         self.data_source_mgr: DataSourceManager = self.locator.get_manager('DataSourceManager')
         self.plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
 
-    @transaction(append_meta={'authorization.scope': 'PROJECT'})
+    @transaction(append_meta={
+        'authorization.scope': 'PROJECT',
+        'mutation.append_parameter': {'user_projects': 'authorization.projects'}
+    })
     @check_required(['start', 'end', 'granularity', 'domain_id'])
     def get_data(self, params):
         """ Get billing data
@@ -69,7 +73,8 @@ class BillingService(BaseService):
                 'granularity': 'str',
                 'domain_id': 'str',
                 'sort': 'dict',
-                'limit': 'int'
+                'limit': 'int',
+                'user_projects': 'list', // from meta
             }
 
         Examples:
@@ -85,13 +90,13 @@ class BillingService(BaseService):
         project_group_id = params.get('project_group_id', None)
         service_accounts = params.get('service_accounts', [])
         aggregation = params.get('aggregation', [])
-        sort = params.get('sort', {'desc':True})
+        sort = params.get('sort', {'desc': True})
         limit = params.get('limit', None)
         self.currency = params.get('currency', DEFAULT_CURRENCY)
 
         # Initialize plugin_mgr
         # caching endpoints
-        # data_source : {'label': 'endpont'}
+        # data_source : {'label': 'endpoint'}
         self.merged_data = None
         endpoint_dic = {}
         possible_service_accounts = self._get_possible_service_accounts(domain_id, project_id, project_group_id, service_accounts)
@@ -103,7 +108,7 @@ class BillingService(BaseService):
         _LOGGER.debug(f'[get_data] {possible_service_accounts}')
         data_arrays_list = []
         for (service_account_id, plugin_info) in possible_service_accounts.items():
-            # get secret from service accunt
+            # get secret from service account
             secrets_info = self.secret_mgr.list_secrets_by_service_account_id(service_account_id, domain_id)
             for secret in secrets_info['results']:
                 try:
@@ -270,7 +275,7 @@ class BillingService(BaseService):
         # append group_by filter
         group_by = ['resource_type'] + aggregation
 
-       # 1. aggregation
+        # 1. aggregation
         grouped_data = dataframe.groupby(group_by).sum()
         _LOGGER.debug(f'\n\n[1. Aggregation]{group_by}\n {grouped_data}')
         """
