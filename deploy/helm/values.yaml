@@ -8,8 +8,7 @@ worker: false
 name: billing
 replicas: 1
 image:
-    repository: spaceone
-    name: billing
+    name: spaceone/billing
     version: latest
 imagePullPolicy: IfNotPresent
 
