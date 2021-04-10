@@ -1,6 +1,7 @@
 import logging
 
 from spaceone.core.service import *
+from spaceone.core import utils
 
 from spaceone.billing.error import *
 from spaceone.billing.manager.repository_manager import RepositoryManager
@@ -31,7 +32,7 @@ class DataSourceService(BaseService):
                 'name': 'str',
                 'billing_type': 'str',
                 'plugin_info': 'dict',
-                'tags': 'list',
+                'tags': 'dict',
                 'domain_id': 'str'
             }
 
@@ -39,6 +40,9 @@ class DataSourceService(BaseService):
             data_source_vo (object)
         """
         domain_id = params['domain_id']
+
+        if 'tags' in params:
+            params['tags'] = utils.dict_to_tags(params['tags'])
 
         self._check_plugin_info(params['plugin_info'])
         plugin_info = self._get_plugin(params['plugin_info'], domain_id)
@@ -61,7 +65,7 @@ class DataSourceService(BaseService):
                 'data_source_id': 'str',
                 'name': 'dict',
                 'plugin_info': 'dict',
-                'tags': 'list'
+                'tags': 'dict'
                 'domain_id': 'str'
             }
 
@@ -71,6 +75,9 @@ class DataSourceService(BaseService):
         data_source_id = params['data_source_id']
         domain_id = params['domain_id']
         data_source_vo = self.data_source_mgr.get_data_source(data_source_id, domain_id)
+
+        if 'tags' in params:
+            params['tags'] = utils.dict_to_tags(params['tags'])
 
         if 'plugin_info' in params:
             self._check_plugin_info(params['plugin_info'])
