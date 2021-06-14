@@ -344,9 +344,15 @@ class BillingService(BaseService):
             _LOGGER.debug(f'[_get_possible_service_accounts] service_accounts: {service_accounts_by_provider}')
             for service_account in service_accounts_by_provider:
                 # check project_id
-                if service_account['project_info']['project_id'] in project_list:
+                my_project_info = service_account.get('project_info', {})
+                my_project_id = my_project_info.get('project_id', None)
+                if my_project_id in project_list:
                     data_source_dict = data_source_vo.to_dict()
                     results[service_account['service_account_id']] = data_source_dict['plugin_info']
+                elif my_project_id == None:
+                    _LOGGER.error(f'[_get_possible_service_accounts] project_id is None of {service_account}')
+                else:
+                    _LOGGER.debug(f'[_get_possible_service_accounts] no match of {my_project_id}')
         return results
 
     def _get_plugin_aggregation(self, aggregation):
