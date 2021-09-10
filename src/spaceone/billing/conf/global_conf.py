@@ -32,3 +32,20 @@ CONNECTORS = {
     'SecretConnector': {
     },
 }
+
+INSTALLED_DATA_SOURCE_PLUGINS = [
+    # {
+    #     'name': '',
+    #     'plugin_info': {
+    #         'plugin_id': '',
+    #         'version': '',
+    #         'options': {},
+    #         'secret_data': {},
+    #         'schema': '',
+    #         'upgrade_mode': ''
+    #     },
+    #     'tags':{
+    #         'description': ''
+    #     }
+    # }
+]

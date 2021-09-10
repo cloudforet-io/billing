@@ -2,10 +2,10 @@ import logging
 
 from spaceone.core.service import *
 from spaceone.core import utils
-
+from spaceone.core import cache
+from spaceone.core import config
 from spaceone.billing.error import *
 from spaceone.billing.manager.repository_manager import RepositoryManager
-from spaceone.billing.manager.secret_manager import SecretManager
 from spaceone.billing.manager.plugin_manager import PluginManager
 from spaceone.billing.manager.data_source_manager import DataSourceManager
 
@@ -50,8 +50,13 @@ class DataSourceService(BaseService):
 
         # Update metadata
         #verified_options = self._verify_plugin(params['plugin_info'], params['capability'], domain_id)
-        metadata_from_plugin = self._init_plugin(params['plugin_info'], domain_id)
+        metadata_from_plugin, endpoint_info = self._init_plugin(params['plugin_info'], domain_id)
         params['plugin_info']['metadata'] = metadata_from_plugin['metadata']
+
+        if version := endpoint_info.get('updated_version'):
+            plugin_info.update({
+                'version': version
+            })
 
         return self.data_source_mgr.register_data_source(params)
 
@@ -78,18 +83,6 @@ class DataSourceService(BaseService):
 
         if 'tags' in params:
             params['tags'] = utils.dict_to_tags(params['tags'])
-
-        if 'plugin_info' in params:
-            self._check_plugin_info(params['plugin_info'])
-
-            if params['plugin_info']['plugin_id'] != data_source_vo.plugin_info.plugin_id:
-                raise ERROR_NOT_ALLOWED_PLUGIN_ID(old_plugin_id=data_source_vo.plugin_info.plugin_id,
-                                                  new_plugin_id=params['plugin_info']['plugin_id'])
-
-            verified_options = self._verify_plugin(params['plugin_info'],
-                                                   data_source_vo.capability, domain_id)
-
-            params['plugin_info']['options'].update(verified_options)
 
         return self.data_source_mgr.update_data_source_by_vo(params, data_source_vo)
 
@@ -173,7 +166,7 @@ class DataSourceService(BaseService):
         domain_id = params['domain_id']
         data_source_vo = self.data_source_mgr.get_data_source(data_source_id, domain_id)
 
-        self._verify_plugin(data_source_vo.plugin_info, data_source_vo.capability, domain_id)
+        # self._verify_plugin(data_source_vo.plugin_info, data_source_vo.capability, domain_id)
 
         return {'status': True}
 
@@ -192,7 +185,10 @@ class DataSourceService(BaseService):
         Returns:
             data_source_vo (object)
         """
-        return self.data_source_mgr.get_data_source(params['data_source_id'], params['domain_id'], params.get('only'))
+        domain_id = params['domain_id']
+        self._initialize_data_sources(domain_id)
+
+        return self.data_source_mgr.get_data_source(params['data_source_id'], domain_id, params.get('only'))
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['domain_id'])
@@ -216,8 +212,11 @@ class DataSourceService(BaseService):
             data_source_vos (object)
             total_count
         """
-
+        domain_id = params['domain_id']
         query = params.get('query', {})
+
+        self._initialize_data_sources(domain_id)
+
         return self.data_source_mgr.list_data_sources(query)
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
@@ -246,8 +245,9 @@ class DataSourceService(BaseService):
         if 'plugin_id' not in plugin_info_params:
             raise ERROR_REQUIRED_PARAMETER(key='plugin_info.plugin_id')
 
-        if 'version' not in plugin_info_params:
-            raise ERROR_REQUIRED_PARAMETER(key='plugin_info.version')
+        if 'upgrade_mode' in plugin_info_params and plugin_info_params['upgrade_mode'] == 'MANUAL':
+            if 'version' not in plugin_info_params:
+                raise ERROR_REQUIRED_PARAMETER(key='plugin_info.version')
 
         secret_id = plugin_info_params.get('secret_id')
         provider = plugin_info_params.get('provider')
@@ -257,20 +257,41 @@ class DataSourceService(BaseService):
 
     def _get_plugin(self, plugin_info, domain_id):
         plugin_id = plugin_info['plugin_id']
-        version = plugin_info['version']
 
         repo_mgr: RepositoryManager = self.locator.get_manager('RepositoryManager')
         plugin_info = repo_mgr.get_plugin(plugin_id, domain_id)
-        repo_mgr.check_plugin_version(plugin_id, version, domain_id)
+
+        if version := plugin_info.get('version'):
+            repo_mgr.check_plugin_version(plugin_id, version, domain_id)
 
         return plugin_info
 
     def _init_plugin(self, plugin_info, domain_id):
-        plugin_id = plugin_info['plugin_id']
-        version = plugin_info['version']
-        options = plugin_info.get('options', {})
-
         plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
-        plugin_mgr.init_plugin(plugin_id, version, domain_id)
-        metadata = plugin_mgr.call_init_plugin(options)
-        return metadata
+        endpoint_info = plugin_mgr.initialize(plugin_info, domain_id)
+        metadata = plugin_mgr.init_plugin(plugin_info.get('options', {}))
+
+        return metadata, endpoint_info
+
+    @cache.cacheable(key='init-data-source:{domain_id}', expire=300)
+    def _initialize_data_sources(self, domain_id):
+        _LOGGER.debug(f'[_initialize_data_source] domain_id: {domain_id}')
+
+        query = {'filter': [{'k': 'domain_id', 'v': domain_id, 'o': 'eq'}]}
+        data_source_vos, total_count = self.data_source_mgr.list_data_sources(query)
+
+        installed_data_sources_ids = [data_source_vo.plugin_info.plugin_id for data_source_vo in data_source_vos]
+        _LOGGER.debug(f'[_initialize_data_source] Installed Plugins : {installed_data_sources_ids}')
+
+        global_conf = config.get_global()
+        for _data_source in global_conf.get('INSTALLED_DATA_SOURCE_PLUGINS', []):
+            if _data_source['plugin_info']['plugin_id'] not in installed_data_sources_ids:
+                try:
+                    _LOGGER.debug(
+                        f'[_initialize_data_source] Create init data source: {_data_source["plugin_info"]["plugin_id"]}')
+                    _data_source['domain_id'] = domain_id
+                    self.register(_data_source)
+                except Exception as e:
+                    _LOGGER.error(f'[_initialize_data_source] {e}')
+
+        return True

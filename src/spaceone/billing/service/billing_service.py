@@ -127,7 +127,8 @@ class BillingService(BaseService):
                         'granularity': params['granularity'],
                     }
                     param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
-                    self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
+                    # self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
+                    self.plugin_mgr.initialize(param_for_plugin, domain_id)
                     response = self.plugin_mgr.get_data(**param_for_plugin)
                     data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
                     data_arrays_list.extend(data_arrays)
