@@ -16,15 +16,33 @@ class PluginManager(BaseManager):
         self.plugin_connector: PluginConnector = self.locator.get_connector('PluginConnector')
         self.mp_connector: BillingPluginConnector = self.locator.get_connector('BillingPluginConnector')
 
-    def init_plugin(self, plugin_id, version, domain_id):
-        endpoint = self.plugin_connector.get_plugin_endpoint(plugin_id, version, domain_id)
+    def initialize(self, plugin_info, domain_id):
+        _LOGGER.debug(f'[initialize] plugin_info: {plugin_info}')
+
+        plugin_id = plugin_info['plugin_id']
+        upgrade_mode = plugin_info.get('upgrade_mode', 'AUTO')
+
+        if upgrade_mode == 'AUTO':
+            endpoint_response = self.plugin_connector.get_plugin_endpoint(plugin_id, domain_id)
+        else:
+            endpoint_response = self.plugin_connector.get_plugin_endpoint(plugin_id, domain_id,
+                                                                          version=plugin_info.get('version'))
+
+        endpoint = endpoint_response['endpoint']
         _LOGGER.debug(f'[init_plugin] endpoint: {endpoint}')
         self.mp_connector.initialize(endpoint)
+
+        return endpoint_response
+
+    def init_plugin(self, options):
+        plugin_info = self.mp_connector.init(options)
+
+        _LOGGER.debug(f'[plugin_info] {plugin_info}')
+        return plugin_info.get('metadata', {})
 
     def call_init_plugin(self, options):
         metadata = self.mp_connector.init(options)
         return metadata
-
 
     def verify_plugin(self, options, secret_data, billing_type):
         plugin_info = self.mp_connector.init(options)
