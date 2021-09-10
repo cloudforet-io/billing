@@ -25,10 +25,14 @@ HANDLERS = {
 CONNECTORS = {
     'IdentityConnector': {
     },
+    'InventoryConnector': {
+    },
     'PluginConnector': {
     },
     'RepositoryConnector': {
     },
     'SecretConnector': {
+    },
+    'BillingPluginConnector': {
     },
 }
