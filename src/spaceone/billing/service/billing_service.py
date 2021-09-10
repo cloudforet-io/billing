@@ -107,7 +107,7 @@ class BillingService(BaseService):
 
         _LOGGER.debug(f'[get_data] {possible_service_accounts}')
         data_arrays_list = []
-        for (service_account_id, plugin_info) in possible_service_accounts.items():
+        for (service_account_id, endpoint) in possible_service_accounts.items():
             # get secret from service account
             secrets_info = self.secret_mgr.list_secrets_by_service_account_id(service_account_id, domain_id)
             for secret in secrets_info['results']:
@@ -127,13 +127,12 @@ class BillingService(BaseService):
                         'granularity': params['granularity'],
                     }
                     param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
-                    # self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
-                    self.plugin_mgr.initialize(param_for_plugin, domain_id)
+                    self.plugin_mgr.initialize(endpoint)
                     response = self.plugin_mgr.get_data(**param_for_plugin)
                     data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
                     data_arrays_list.extend(data_arrays)
                 except Exception as e:
-                    _LOGGER.error(f'[get_data] fail to get_data by {secret_id}, skip.....')
+                    _LOGGER.error(f'[get_data] fail to get_data by {secret["secret_id"]}, skip.....')
 
         _LOGGER.debug(f'[get_data] {data_arrays_list}')
         # Make DataFrame from data_arrays_list
@@ -340,6 +339,8 @@ class BillingService(BaseService):
             if self._check_data_source_state(data_source_vo) == False:
                 # Do nothing
                 continue
+
+            endpoint = self.plugin_mgr.get_billing_plugin_endpoint_by_vo(data_source_vo)
             # Find all service accounts with data_source.provider
             service_accounts_by_provider = self.identity_mgr.list_service_accounts_by_provider(data_source_vo.provider, domain_id)
             _LOGGER.debug(f'[_get_possible_service_accounts] service_accounts: {service_accounts_by_provider}')
@@ -349,7 +350,7 @@ class BillingService(BaseService):
                 my_project_id = my_project_info.get('project_id', None)
                 if my_project_id in project_list:
                     data_source_dict = data_source_vo.to_dict()
-                    results[service_account['service_account_id']] = data_source_dict['plugin_info']
+                    results[service_account['service_account_id']] = endpoint
                 elif my_project_id == None:
                     _LOGGER.error(f'[_get_possible_service_accounts] project_id is None of {service_account}')
                 else:
