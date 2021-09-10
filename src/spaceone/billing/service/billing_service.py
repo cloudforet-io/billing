@@ -127,7 +127,8 @@ class BillingService(BaseService):
                         'granularity': params['granularity'],
                     }
                     param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
-                    self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
+                    # self.plugin_mgr.init_plugin(plugin_info['plugin_id'], plugin_info['version'], domain_id)
+                    self.plugin_mgr.initialize(param_for_plugin, domain_id)
                     response = self.plugin_mgr.get_data(**param_for_plugin)
                     data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
                     data_arrays_list.extend(data_arrays)
@@ -344,9 +345,15 @@ class BillingService(BaseService):
             _LOGGER.debug(f'[_get_possible_service_accounts] service_accounts: {service_accounts_by_provider}')
             for service_account in service_accounts_by_provider:
                 # check project_id
-                if service_account['project_info']['project_id'] in project_list:
+                my_project_info = service_account.get('project_info', {})
+                my_project_id = my_project_info.get('project_id', None)
+                if my_project_id in project_list:
                     data_source_dict = data_source_vo.to_dict()
                     results[service_account['service_account_id']] = data_source_dict['plugin_info']
+                elif my_project_id == None:
+                    _LOGGER.error(f'[_get_possible_service_accounts] project_id is None of {service_account}')
+                else:
+                    _LOGGER.debug(f'[_get_possible_service_accounts] no match of {my_project_id}')
         return results
 
     def _get_plugin_aggregation(self, aggregation):
