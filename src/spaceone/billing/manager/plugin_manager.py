@@ -61,7 +61,11 @@ class PluginManager(BaseManager):
         return endpoint
 
     def get_billing_plugin_endpoint(self, plugin_info, domain_id):
-        response = self.plugin_connector.get_plugin_endpoint(plugin_info, domain_id)
+        plugin_id = plugin_info['plugin_id']
+        version = plugin_info.get('version')
+        upgrade_mode = plugin_info.get('upgrade_mode', 'AUTO')
+
+        response = self.plugin_connector.get_plugin_endpoint(plugin_id, version, domain_id, upgrade_mode)
         return response.endpoint, response.updated_version
 
     def upgrade_billing_plugin_version(self, data_source_vo: DataSource, endpoint, updated_version):
