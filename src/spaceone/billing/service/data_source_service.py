@@ -1,11 +1,12 @@
 import logging
 
 from spaceone.core.service import *
-from spaceone.core import utils
 from spaceone.core import cache
 from spaceone.core import config
+from spaceone.core import utils
 from spaceone.billing.error import *
 from spaceone.billing.manager.repository_manager import RepositoryManager
+from spaceone.billing.manager.secret_manager import SecretManager
 from spaceone.billing.manager.plugin_manager import PluginManager
 from spaceone.billing.manager.data_source_manager import DataSourceManager
 
@@ -21,6 +22,7 @@ class DataSourceService(BaseService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_source_mgr: DataSourceManager = self.locator.get_manager('DataSourceManager')
+        self.plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['name', 'plugin_info', 'domain_id'])
@@ -49,14 +51,13 @@ class DataSourceService(BaseService):
         params['provider'] = plugin_info.get('provider')
 
         # Update metadata
-        #verified_options = self._verify_plugin(params['plugin_info'], params['capability'], domain_id)
-        metadata_from_plugin, endpoint_info = self._init_plugin(params['plugin_info'], domain_id)
-        params['plugin_info']['metadata'] = metadata_from_plugin['metadata']
+        endpoint, updated_version = self.plugin_mgr.get_billing_plugin_endpoint(params['plugin_info'], domain_id)
+        if updated_version:
+            params['plugin_info']['version'] = updated_version
 
-        if version := endpoint_info.get('updated_version'):
-            plugin_info.update({
-                'version': version
-            })
+        options = params['plugin_info'].get('options', {})
+        plugin_metadata = self._init_plugin(endpoint, options)
+        params['plugin_info']['metadata'] = plugin_metadata
 
         return self.data_source_mgr.register_data_source(params)
 
@@ -83,6 +84,22 @@ class DataSourceService(BaseService):
 
         if 'tags' in params:
             params['tags'] = utils.dict_to_tags(params['tags'])
+
+        if 'plugin_info' in params:
+            self._check_plugin_info(params['plugin_info'])
+
+            if params['plugin_info']['plugin_id'] != data_source_vo.plugin_info.plugin_id:
+                raise ERROR_NOT_ALLOWED_PLUGIN_ID(old_plugin_id=data_source_vo.plugin_info.plugin_id,
+                                                  new_plugin_id=params['plugin_info']['plugin_id'])
+
+            # Update metadata
+            endpoint, updated_version = self.plugin_mgr.get_billing_plugin_endpoint(params['plugin_info'], domain_id)
+            if updated_version:
+                params['plugin_info']['version'] = updated_version
+
+            options = params['plugin_info'].get('options', {})
+            plugin_metadata = self._init_plugin(endpoint, options)
+            params['plugin_info']['metadata'] = plugin_metadata
 
         return self.data_source_mgr.update_data_source_by_vo(params, data_source_vo)
 
@@ -166,8 +183,6 @@ class DataSourceService(BaseService):
         domain_id = params['domain_id']
         data_source_vo = self.data_source_mgr.get_data_source(data_source_id, domain_id)
 
-        # self._verify_plugin(data_source_vo.plugin_info, data_source_vo.capability, domain_id)
-
         return {'status': True}
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
@@ -212,6 +227,7 @@ class DataSourceService(BaseService):
             data_source_vos (object)
             total_count
         """
+
         domain_id = params['domain_id']
         query = params.get('query', {})
 
@@ -245,10 +261,6 @@ class DataSourceService(BaseService):
         if 'plugin_id' not in plugin_info_params:
             raise ERROR_REQUIRED_PARAMETER(key='plugin_info.plugin_id')
 
-        if 'upgrade_mode' in plugin_info_params and plugin_info_params['upgrade_mode'] == 'MANUAL':
-            if 'version' not in plugin_info_params:
-                raise ERROR_REQUIRED_PARAMETER(key='plugin_info.version')
-
         secret_id = plugin_info_params.get('secret_id')
         provider = plugin_info_params.get('provider')
 
@@ -259,19 +271,11 @@ class DataSourceService(BaseService):
         plugin_id = plugin_info['plugin_id']
 
         repo_mgr: RepositoryManager = self.locator.get_manager('RepositoryManager')
-        plugin_info = repo_mgr.get_plugin(plugin_id, domain_id)
+        return repo_mgr.get_plugin(plugin_id, domain_id)
 
-        if version := plugin_info.get('version'):
-            repo_mgr.check_plugin_version(plugin_id, version, domain_id)
-
-        return plugin_info
-
-    def _init_plugin(self, plugin_info, domain_id):
-        plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
-        endpoint_info = plugin_mgr.initialize(plugin_info, domain_id)
-        metadata = plugin_mgr.init_plugin(plugin_info.get('options', {}))
-
-        return metadata, endpoint_info
+    def _init_plugin(self, endpoint, options):
+        self.plugin_mgr.initialize(endpoint)
+        return self.plugin_mgr.init_plugin(options)
 
     @cache.cacheable(key='init-data-source:{domain_id}', expire=300)
     def _initialize_data_sources(self, domain_id):

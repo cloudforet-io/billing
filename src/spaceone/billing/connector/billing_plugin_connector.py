@@ -19,6 +19,11 @@ class BillingPluginConnector(BaseConnector):
         self.client = None
 
     def initialize(self, endpoint):
+        static_endpoint = self.config.get('endpoint')
+
+        if static_endpoint:
+            endpoint = static_endpoint
+
         e = parse_endpoint(endpoint)
         self.client = pygrpc.client(endpoint=f'{e.get("hostname")}:{e.get("port")}', version='plugin')
 
@@ -30,7 +35,7 @@ class BillingPluginConnector(BaseConnector):
         return self._change_message(response)
         # return response
 
-    def verify(self, schema, options, secret_data):
+    def verify(self, options, secret_data, schema=None):
         params = {
             'options': options,
             'secret_data': secret_data

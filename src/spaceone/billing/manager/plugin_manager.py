@@ -5,6 +5,7 @@ from spaceone.core.manager import BaseManager
 from spaceone.billing.error import *
 from spaceone.billing.connector.plugin_connector import PluginConnector
 from spaceone.billing.connector.billing_plugin_connector import BillingPluginConnector
+from spaceone.billing.model.data_source_model import DataSource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -14,44 +15,22 @@ class PluginManager(BaseManager):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.plugin_connector: PluginConnector = self.locator.get_connector('PluginConnector')
-        self.mp_connector: BillingPluginConnector = self.locator.get_connector('BillingPluginConnector')
+        self.billing_plugin_connector: BillingPluginConnector = self.locator.get_connector('BillingPluginConnector')
 
-    def initialize(self, plugin_info, domain_id):
-        _LOGGER.debug(f'[initialize] plugin_info: {plugin_info}')
-
-        plugin_id = plugin_info['plugin_id']
-        upgrade_mode = plugin_info.get('upgrade_mode', 'AUTO')
-
-        if upgrade_mode == 'AUTO':
-            endpoint_response = self.plugin_connector.get_plugin_endpoint(plugin_id, domain_id)
-        else:
-            endpoint_response = self.plugin_connector.get_plugin_endpoint(plugin_id, domain_id,
-                                                                          version=plugin_info.get('version'))
-
-        endpoint = endpoint_response['endpoint']
-        _LOGGER.debug(f'[init_plugin] endpoint: {endpoint}')
-        self.mp_connector.initialize(endpoint)
-
-        return endpoint_response
+    def initialize(self, endpoint):
+        _LOGGER.debug(f'[initialize] data source plugin endpoint: {endpoint}')
+        self.billing_plugin_connector.initialize(endpoint)
 
     def init_plugin(self, options):
-        plugin_info = self.mp_connector.init(options)
+        plugin_info = self.billing_plugin_connector.init(options)
 
         _LOGGER.debug(f'[plugin_info] {plugin_info}')
-        return plugin_info.get('metadata', {})
+        plugin_metadata = plugin_info.get('metadata', {})
 
-    def call_init_plugin(self, options):
-        metadata = self.mp_connector.init(options)
-        return metadata
+        return plugin_metadata
 
-    def verify_plugin(self, options, secret_data, billing_type):
-        plugin_info = self.mp_connector.init(options)
-
-        _LOGGER.debug(f'[plugin_info] {plugin_info}')
-        plugin_options = plugin_info.get('metadata', {})
-
-        self._validate_plugin_option(plugin_options, billing_type)
-        return plugin_options
+    def verify_plugin(self, options, secret_data, schema):
+        self.billing_plugin_connector.verify(options, secret_data, schema)
 
     @cacheable(key='billing:{cache_key}', expire=3600)
     def get_data(self, schema, options, secret_data, filter, aggregation, start, end, granularity, cache_key):
@@ -67,7 +46,32 @@ class PluginManager(BaseManager):
             granularity: str
             cache_key: str for data caching
         """
-        billing_data_info = self.mp_connector.get_data(schema, options, secret_data, filter, aggregation, start, end, granularity)
+        billing_data_info = self.billing_plugin_connector.get_data(schema, options, secret_data, filter, aggregation, start, end, granularity)
 
         return billing_data_info
 
+    def get_billing_plugin_endpoint_by_vo(self, data_source_vo: DataSource):
+        plugin_info = data_source_vo.plugin_info.to_dict()
+        endpoint, updated_version = self.get_billing_plugin_endpoint(plugin_info, data_source_vo.domain_id)
+
+        if updated_version:
+            _LOGGER.debug(f'[get_billing_plugin_endpoint_by_vo] upgrade plugin version: {plugin_info["version"]} -> {updated_version}')
+            self.upgrade_billing_plugin_version(data_source_vo, endpoint, updated_version)
+
+        return endpoint
+
+    def get_billing_plugin_endpoint(self, plugin_info, domain_id):
+        plugin_id = plugin_info['plugin_id']
+        version = plugin_info.get('version')
+        upgrade_mode = plugin_info.get('upgrade_mode', 'AUTO')
+
+        response = self.plugin_connector.get_plugin_endpoint(plugin_id, version, domain_id, upgrade_mode)
+        return response.endpoint, response.updated_version
+
+    def upgrade_billing_plugin_version(self, data_source_vo: DataSource, endpoint, updated_version):
+        plugin_info = data_source_vo.plugin_info.to_dict()
+        self.initialize(endpoint)
+        plugin_metadata = self.init_plugin(plugin_info.get('options', {}))
+        plugin_info['version'] = updated_version
+        plugin_info['metadata'] = plugin_metadata
+        data_source_vo.update({'plugin_info': plugin_info})

@@ -4,7 +4,7 @@ from google.protobuf.json_format import MessageToDict
 
 from spaceone.core.connector import BaseConnector
 from spaceone.core import pygrpc
-from spaceone.core.utils import parse_endpoint
+from spaceone.core.utils import parse_grpc_endpoint
 from spaceone.core.error import *
 
 __all__ = ['PluginConnector']
@@ -21,8 +21,8 @@ class PluginConnector(BaseConnector):
 
     def _init_client(self):
         for version, uri in self.config['endpoint'].items():
-            e = parse_endpoint(uri)
-            self.client = pygrpc.client(endpoint=f'{e.get("hostname")}:{e.get("port")}', version=version)
+            e = parse_grpc_endpoint(uri)
+            self.client = pygrpc.client(endpoint=e['endpoint'], ssl_enabled=e['ssl_enabled'])
 
     def _check_config(self):
         if 'endpoint' not in self.config:
@@ -31,20 +31,15 @@ class PluginConnector(BaseConnector):
         if len(self.config['endpoint']) > 1:
             raise ERROR_CONNECTOR_CONFIGURATION(backend=self.__class__.__name__)
 
-    def get_plugin_endpoint(self, plugin_id, domain_id, **kwargs):
-        request = {
+    def get_plugin_endpoint(self, plugin_id, version, domain_id, upgrade_mode='AUTO'):
+        response = self.client.Plugin.get_plugin_endpoint({
             'plugin_id': plugin_id,
-            'labels': kwargs.get('labels', {}),
+            'version': version,
+            'upgrade_mode': upgrade_mode,
             'domain_id': domain_id
-        }
+        }, metadata=self.transaction.get_connection_meta())
 
-        if 'version' in kwargs:
-            request.update({'version': kwargs.get('version')})
-        else:
-            request.update({'upgrade_mode': 'AUTO'})
-
-        response = self.client.Plugin.get_plugin_endpoint(request, metadata=self.transaction.get_connection_meta())
-        return self._change_message(response)
+        return response
 
     @staticmethod
     def _change_message(message):
