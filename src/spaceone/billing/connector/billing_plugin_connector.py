@@ -35,7 +35,7 @@ class BillingPluginConnector(BaseConnector):
         return self._change_message(response)
         # return response
 
-    def verify(self, schema, options, secret_data):
+    def verify(self, options, secret_data, schema=None):
         params = {
             'options': options,
             'secret_data': secret_data

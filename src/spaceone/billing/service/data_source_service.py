@@ -21,6 +21,7 @@ class DataSourceService(BaseService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_source_mgr: DataSourceManager = self.locator.get_manager('DataSourceManager')
+        self.plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
     @check_required(['name', 'plugin_info', 'domain_id'])
@@ -49,9 +50,13 @@ class DataSourceService(BaseService):
         params['provider'] = plugin_info.get('provider')
 
         # Update metadata
-        #verified_options = self._verify_plugin(params['plugin_info'], params['capability'], domain_id)
-        metadata_from_plugin = self._init_plugin(params['plugin_info'], domain_id)
-        params['plugin_info']['metadata'] = metadata_from_plugin['metadata']
+        endpoint, updated_version = self.plugin_mgr.get_billing_plugin_endpoint(params['plugin_info'], domain_id)
+        if updated_version:
+            params['plugin_info']['version'] = updated_version
+
+        options = params['plugin_info'].get('options', {})
+        plugin_metadata = self._init_plugin(endpoint, options)
+        params['plugin_info']['metadata'] = plugin_metadata
 
         return self.data_source_mgr.register_data_source(params)
 
@@ -86,10 +91,14 @@ class DataSourceService(BaseService):
                 raise ERROR_NOT_ALLOWED_PLUGIN_ID(old_plugin_id=data_source_vo.plugin_info.plugin_id,
                                                   new_plugin_id=params['plugin_info']['plugin_id'])
 
-            verified_options = self._verify_plugin(params['plugin_info'],
-                                                   data_source_vo.capability, domain_id)
+            # Update metadata
+            endpoint, updated_version = self.plugin_mgr.get_billing_plugin_endpoint(params['plugin_info'], domain_id)
+            if updated_version:
+                params['plugin_info']['version'] = updated_version
 
-            params['plugin_info']['options'].update(verified_options)
+            options = params['plugin_info'].get('options', {})
+            plugin_metadata = self._init_plugin(endpoint, options)
+            params['plugin_info']['metadata'] = plugin_metadata
 
         return self.data_source_mgr.update_data_source_by_vo(params, data_source_vo)
 
@@ -173,8 +182,6 @@ class DataSourceService(BaseService):
         domain_id = params['domain_id']
         data_source_vo = self.data_source_mgr.get_data_source(data_source_id, domain_id)
 
-        self._verify_plugin(data_source_vo.plugin_info, data_source_vo.capability, domain_id)
-
         return {'status': True}
 
     @transaction(append_meta={'authorization.scope': 'DOMAIN'})
@@ -246,9 +253,6 @@ class DataSourceService(BaseService):
         if 'plugin_id' not in plugin_info_params:
             raise ERROR_REQUIRED_PARAMETER(key='plugin_info.plugin_id')
 
-        if 'version' not in plugin_info_params:
-            raise ERROR_REQUIRED_PARAMETER(key='plugin_info.version')
-
         secret_id = plugin_info_params.get('secret_id')
         provider = plugin_info_params.get('provider')
 
@@ -257,20 +261,10 @@ class DataSourceService(BaseService):
 
     def _get_plugin(self, plugin_info, domain_id):
         plugin_id = plugin_info['plugin_id']
-        version = plugin_info['version']
 
         repo_mgr: RepositoryManager = self.locator.get_manager('RepositoryManager')
-        plugin_info = repo_mgr.get_plugin(plugin_id, domain_id)
-        repo_mgr.check_plugin_version(plugin_id, version, domain_id)
+        return repo_mgr.get_plugin(plugin_id, domain_id)
 
-        return plugin_info
-
-    def _init_plugin(self, plugin_info, domain_id):
-        plugin_id = plugin_info['plugin_id']
-        version = plugin_info['version']
-        options = plugin_info.get('options', {})
-
-        plugin_mgr: PluginManager = self.locator.get_manager('PluginManager')
-        plugin_mgr.init_plugin(plugin_id, version, domain_id)
-        metadata = plugin_mgr.call_init_plugin(options)
-        return metadata
+    def _init_plugin(self, endpoint, options):
+        self.plugin_mgr.initialize(endpoint)
+        return self.plugin_mgr.init_plugin(options)

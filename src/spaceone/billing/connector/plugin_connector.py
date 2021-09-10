@@ -31,15 +31,15 @@ class PluginConnector(BaseConnector):
         if len(self.config['endpoint']) > 1:
             raise ERROR_CONNECTOR_CONFIGURATION(backend=self.__class__.__name__)
 
-    def get_plugin_endpoint(self, plugin_id, version, domain_id, **kwargs):
+    def get_plugin_endpoint(self, plugin_id, version, domain_id, upgrade_mode='AUTO'):
         response = self.client.Plugin.get_plugin_endpoint({
             'plugin_id': plugin_id,
             'version': version,
-            'labels': kwargs.get('labels', {}),
+            'upgrade_mode': upgrade_mode,
             'domain_id': domain_id
         }, metadata=self.transaction.get_connection_meta())
 
-        return response.endpoint
+        return response
 
     @staticmethod
     def _change_message(message):
