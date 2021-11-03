@@ -4,3 +4,4 @@ mongoengine
 redis
 schematics
 pandas
+boto3
