@@ -2,8 +2,7 @@ import logging
 
 from spaceone.core.cache import cacheable
 from spaceone.core.manager import BaseManager
-from spaceone.billing.error import *
-from spaceone.billing.connector.plugin_connector import PluginConnector
+from spaceone.core.connector.space_connector import SpaceConnector
 from spaceone.billing.connector.billing_plugin_connector import BillingPluginConnector
 from spaceone.billing.model.data_source_model import DataSource
 
@@ -14,7 +13,7 @@ class PluginManager(BaseManager):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.plugin_connector: PluginConnector = self.locator.get_connector('PluginConnector')
+        self.plugin_connector: SpaceConnector = self.locator.get_connector('SpaceConnector', service='plugin')
         self.billing_plugin_connector: BillingPluginConnector = self.locator.get_connector('BillingPluginConnector')
 
     def initialize(self, endpoint):
@@ -65,8 +64,13 @@ class PluginManager(BaseManager):
         version = plugin_info.get('version')
         upgrade_mode = plugin_info.get('upgrade_mode', 'AUTO')
 
-        response = self.plugin_connector.get_plugin_endpoint(plugin_id, version, domain_id, upgrade_mode)
-        return response.endpoint, response.updated_version
+        response = self.plugin_connector.dispatch('Plugin.get_plugin_endpoint',
+                                                  {'plugin_id': plugin_id,
+                                                   'version': version,
+                                                   'upgrade_mode': upgrade_mode,
+                                                   'domain_id': domain_id})
+
+        return response.get('endpoint'), response.get('updated_version')
 
     def upgrade_billing_plugin_version(self, data_source_vo: DataSource, endpoint, updated_version):
         plugin_info = data_source_vo.plugin_info.to_dict()
