@@ -23,17 +23,17 @@ HANDLERS = {
 }
 
 CONNECTORS = {
-    'IdentityConnector': {
-    },
-    'InventoryConnector': {
-    },
-    'PluginConnector': {
-    },
-    'RepositoryConnector': {
-    },
-    'SecretConnector': {
-    },
     'BillingPluginConnector': {
+    },
+    'SpaceConnector': {
+        'backend': 'spaceone.core.connector.space_connector.SpaceConnector',
+        'endpoints': {
+            'identity': 'grpc://identity:50051',
+            'plugin': 'grpc://plugin:50051',
+            'repository': 'grpc://repository:50051',
+            'secret': 'grpc://secret:50051',
+            'config': 'grpc://config:50051',
+        }
     },
 }
 

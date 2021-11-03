@@ -1,3 +1,8 @@
+"""
+Deprecated:
+  Not used. Integrated with SpaceConnector.
+"""
+
 import logging
 
 from google.protobuf.json_format import MessageToDict
@@ -46,7 +51,6 @@ class SecretConnector(BaseConnector):
         }, metadata=self.transaction.get_connection_meta())
 
         return self._change_message(response)
-
 
     def get_secret_data(self, secret_id, domain_id):
         response = self.client.Secret.get_data({
