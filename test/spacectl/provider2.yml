@@ -1,0 +1,30 @@
+---
+capability:
+  supported_schema:
+  - aws_hyperbilling
+  - mzc_hyperbilling
+metadata:
+  view:
+    layouts:
+      help:service_account:create:
+        name: Creation Help
+        options:
+          markdown:
+            en: '# Help for Hyperbilling Users
+
+
+              ## Find Your Hyperbilling API Credentials
+
+
+              To get Hyperbilling API Credentials, contact to MZC_billing@mz.co.kr
+
+              '
+        type: markdown
+name: Hyper Billing
+provider: hyperbilling
+tags:
+  color: '#004F99'
+  icon: https://spaceone-custom-assets.s3.ap-northeast-2.amazonaws.com/console-assets/icons/megazone.svg
+template:
+  service_account:
+    schema: {}

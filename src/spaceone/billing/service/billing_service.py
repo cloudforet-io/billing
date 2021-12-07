@@ -107,32 +107,36 @@ class BillingService(BaseService):
 
         _LOGGER.debug(f'[get_data] {possible_service_accounts}')
         data_arrays_list = []
-        for (service_account_id, endpoint) in possible_service_accounts.items():
+        for (endpoint, (service_account_ids, supported_schema)) in possible_service_accounts.items():
             # get secret from service account
-            secrets_info = self.secret_mgr.list_secrets_by_service_account_id(service_account_id, domain_id)
-            for secret in secrets_info['results']:
-                try:
-                    secret_id = secret['secret_id']
-                    secret_data = self.secret_mgr.get_secret_data(secret_id, domain_id)
-                    # call plugin_manager for get data
-                    # get data
-                    param_for_plugin = {
-                        'schema': secret['schema'],
-                        'options': {},
-                        'secret_data': secret_data,
-                        'filter': {},
-                        'aggregation': self._get_plugin_aggregation(aggregation),
-                        'start': params['start'],
-                        'end': params['end'],
-                        'granularity': params['granularity'],
-                    }
-                    param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
-                    self.plugin_mgr.initialize(endpoint)
-                    response = self.plugin_mgr.get_data(**param_for_plugin)
-                    data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
-                    data_arrays_list.extend(data_arrays)
-                except Exception as e:
-                    _LOGGER.error(f'[get_data] fail to get_data by {secret["secret_id"]}, skip.....')
+            for service_account_id in service_account_ids:
+                secrets_info = self.secret_mgr.list_secrets_by_service_account_id(service_account_id, domain_id)
+                for secret in secrets_info['results']:
+                    if secret['schema'] not in supported_schema:
+                        _LOGGER.debug(f'[skip] not supported schema: {secret["schema"]} in {supported_schema}')
+                        continue
+                    try:
+                        secret_id = secret['secret_id']
+                        secret_data = self.secret_mgr.get_secret_data(secret_id, domain_id)
+                        # call plugin_manager for get data
+                        # get data
+                        param_for_plugin = {
+                            'schema': secret['schema'],
+                            'options': {},
+                            'secret_data': secret_data,
+                            'filter': {},
+                            'aggregation': self._get_plugin_aggregation(aggregation),
+                            'start': params['start'],
+                            'end': params['end'],
+                            'granularity': params['granularity'],
+                        }
+                        param_for_plugin['cache_key'] = self._make_cache_key(param_for_plugin, domain_id)
+                        self.plugin_mgr.initialize(endpoint)
+                        response = self.plugin_mgr.get_data(**param_for_plugin)
+                        data_arrays = self._make_data_arrays(response, service_account_id, secret['project_id'])
+                        data_arrays_list.extend(data_arrays)
+                    except Exception as e:
+                        _LOGGER.error(f'[get_data] fail to get_data by {secret["secret_id"]}, skip.....')
 
         _LOGGER.debug(f'[get_data] {data_arrays_list}')
         # Make DataFrame from data_arrays_list
@@ -315,7 +319,7 @@ class BillingService(BaseService):
 
         Returns:
             {
-                service_account_id: {plugin_info}
+                endpoint: ([service_account_id], [supported_schema])
                 ...
             }
         """
@@ -344,17 +348,21 @@ class BillingService(BaseService):
             # Find all service accounts with data_source.provider
             service_accounts_by_provider = self.identity_mgr.list_service_accounts_by_provider(data_source_vo.provider, domain_id)
             _LOGGER.debug(f'[_get_possible_service_accounts] service_accounts: {service_accounts_by_provider}')
+            account_list = []
             for service_account in service_accounts_by_provider:
                 # check project_id
                 my_project_info = service_account.get('project_info', {})
                 my_project_id = my_project_info.get('project_id', None)
                 if my_project_id in project_list:
-                    data_source_dict = data_source_vo.to_dict()
-                    results[service_account['service_account_id']] = endpoint
+                    # valid account
+                    account_list.append(service_account['service_account_id'])
                 elif my_project_id == None:
                     _LOGGER.error(f'[_get_possible_service_accounts] project_id is None of {service_account}')
                 else:
                     _LOGGER.debug(f'[_get_possible_service_accounts] no match of {my_project_id}')
+            data_source_dict = data_source_vo.to_dict()
+            results[endpoint] = (account_list, data_source_dict['plugin_info']['metadata']['supported_schema'])
+
         return results
 
     def _get_plugin_aggregation(self, aggregation):
