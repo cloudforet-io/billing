@@ -64,7 +64,7 @@ class BillingPluginConnector(BaseConnector):
                 'schema': schema
             })
 
-        _LOGGER.debug(f'[get_data] {params}')
+        #_LOGGER.debug(f'[get_data] {params}')
         responses = self.client.Billing.get_data(params, metadata=self.transaction.get_connection_meta())
         return self._change_message(responses)
 
