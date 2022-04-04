@@ -22,7 +22,7 @@ spec:
           service:
             name: {{ .Values.name }}-rest
             port:
-              number: {{ .Values.ingress.rest.servicePort }}
+              number: {{ .Values.ingress.servicePort }}
 {{- end }}
 {{- end }}
 
